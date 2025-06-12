@@ -46,6 +46,55 @@
             font-size: 14px;
         }
 
+        .stats-container {
+            background: white;
+            border-radius: 10px;
+            box-shadow: 0 4px 10px rgba(0,0,0,0.1);
+            margin-bottom: 20px;
+            padding: 20px;
+        }
+
+        .stats-title {
+            color: #333;
+            font-size: 18px;
+            font-weight: 600;
+            margin-bottom: 15px;
+            text-align: center;
+        }
+
+        .stats-table {
+            width: 100%;
+            border-collapse: collapse;
+            max-width: 600px;
+            margin: 0 auto;
+        }
+
+        .stats-table th,
+        .stats-table td {
+            padding: 12px 20px;
+            text-align: center;
+            border: 1px solid #e9ecef;
+        }
+
+        .stats-table th {
+            background: linear-gradient(135deg, #2196F3 0%, #1976D2 100%);
+            color: white;
+            font-weight: 600;
+            font-size: 14px;
+        }
+
+        .stats-table td {
+            background: #f8f9fa;
+            font-size: 16px;
+            font-weight: 600;
+            color: #495057;
+        }
+
+        .stats-count {
+            font-size: 24px;
+            color: #2196F3;
+        }
+
         .requests-container {
             background: white;
             border-radius: 10px;
@@ -377,6 +426,16 @@
                 display: block;
                 margin-bottom: 10px;
             }
+
+            .stats-table th,
+            .stats-table td {
+                padding: 8px 12px;
+                font-size: 14px;
+            }
+
+            .stats-count {
+                font-size: 20px;
+            }
         }
     </style>
 </head>
@@ -392,6 +451,24 @@
     </div>
 
     <div id="message" class="message"></div>
+
+    <div class="stats-container">
+        <div class="stats-title">Request Statistics</div>
+        <table class="stats-table">
+            <thead>
+                <tr>
+                    <th>Total Forwarded to HOD</th>
+                    <th>HOD Approved</th>
+                    </tr>
+            </thead>
+            <tbody>
+                <tr>
+                    <td><span id="totalForwarded" class="stats-count">0</span></td>
+                    <td><span id="hodApproved" class="stats-count">0</span></td>
+                    </tr>
+            </tbody>
+        </table>
+    </div>
 
     <div class="requests-container">
         <div id="loadingMessage" class="loading">Loading requests...</div>
@@ -566,12 +643,13 @@
         </div>
     </div>
 
-  <script>
+<script>
     // Configuration - Update this to match your backend handler URL
     const HANDLER_URL = 'ViewRequestHandler.ashx'; // Update this path as needed
 
     // Global variables
     let currentRequests = [];
+    let allRequests = []; // Store all requests for statistics
     let selectedRequest = null;
     let championData = {
         name: 'IT Champion',
@@ -596,32 +674,24 @@
             const result = await response.json();
             console.log('Raw API Response:', result);
 
-            currentRequests = result.Requests || [];
+            allRequests = result.Requests || []; // Store all requests
+            currentRequests = allRequests;
             console.log('Total requests received:', currentRequests.length);
 
-            currentRequests.forEach((req, index) => {
-                console.log(`Request ${index + 1}:`, {
-                    id: req.Id || req.RequestID,
-                    applicant: req.ApplicantName,
-                    status: req.Status,
-                    workflowStage: req.WorkflowStage
-                });
-            });
-
+            // Filter requests relevant for IT Champion review
             const pendingRequests = currentRequests.filter(req => {
                 const isForITChampion =
                     (req.Status === 'Pending' && req.WorkflowStage === 'Submitted') ||
                     req.WorkflowStage === 'IT Champion Review' ||
                     req.WorkflowStage === 'Pending IT Champion Review' ||
                     req.WorkflowStage === 'IT Review';
-
-                console.log(`Request ${req.Id || req.RequestID} - Status: ${req.Status}, Stage: ${req.WorkflowStage}, Include: ${isForITChampion}`);
                 return isForITChampion;
             });
 
             console.log('Filtered requests for IT Champion:', pendingRequests.length);
 
             displayRequests(pendingRequests);
+            updateRequestStatistics(); // Update statistics after loading requests
 
             document.getElementById('loadingMessage').style.display = 'none';
             document.getElementById('requestsTable').style.display = 'table';
@@ -632,6 +702,38 @@
         }
     }
 
+    function updateRequestStatistics() {
+        // Count requests forwarded to HOD (requests that have passed IT Champion review)
+        const forwardedRequests = allRequests.filter(req => {
+            return req.WorkflowStage === 'HOD Review' ||
+                   req.WorkflowStage === 'HOD Approved' ||
+                   req.WorkflowStage === 'Approved' ||
+                   req.WorkflowStage === 'Completed' ||
+                   (req.Status && req.Status.includes('HOD'));
+        });
+
+        // Count HOD approved requests
+        const hodApprovedRequests = allRequests.filter(req => {
+            return req.WorkflowStage === 'HOD Approved' ||
+                   req.WorkflowStage === 'Approved' ||
+                   req.WorkflowStage === 'Completed' ||
+                   (req.Status && (req.Status.includes('Approved') || req.Status === 'HOD Approved'));
+        });
+
+        const totalForwarded = forwardedRequests.length;
+        const totalApproved = hodApprovedRequests.length;
+        // Approval rate is no longer calculated or displayed
+
+        // Update the display
+        document.getElementById('totalForwarded').textContent = totalForwarded;
+        document.getElementById('hodApproved').textContent = totalApproved;
+
+        console.log('Statistics updated:', {
+            totalForwarded,
+            totalApproved
+        });
+    }
+
     function displayRequests(requests) {
         const tableBody = document.getElementById('requestsTableBody');
         tableBody.innerHTML = '';
@@ -639,7 +741,7 @@
         if (requests.length === 0) {
             const row = document.createElement('tr');
             const cell = document.createElement('td');
-            cell.colSpan = 5;
+            cell.colSpan = 7;
             cell.textContent = 'No requests available for review.';
             cell.style.textAlign = 'center';
             row.appendChild(cell);
@@ -654,11 +756,12 @@
             row.innerHTML = `
                 <td>${request.RequestID || request.Id}</td>
                 <td>${request.ApplicantName || 'N/A'}</td>
+                <td>${request.Department || 'N/A'}</td>
+                <td>${request.SystemMake || 'N/A'}</td>
                 <td>${formatDate(request.RequestDate)}</td>
-                <td>${request.Status}</td>
+                <td><span class="status-badge status-${request.Status.toLowerCase().replace(/\s/g, '-')}">${request.Status}</span></td>
                 <td>${request.WorkflowStage}</td>
             `;
-
             tableBody.appendChild(row);
         });
     }
@@ -672,8 +775,53 @@
         row.classList.add('selected');
         selectedRequest = request;
 
+        // Populate checklist form with request details if available or clear
+        populateChecklist(request);
+
         document.getElementById('checklistPanel').style.display = 'block';
         document.getElementById('checklistPanel').scrollIntoView({ behavior: 'smooth' });
+    }
+
+    function populateChecklist(request) {
+        // Clear previous data
+        resetChecklistForm();
+
+        // Populate ECNET Connectivity Point details if available in the request
+        if (request.ConnectivityDetails) {
+            document.getElementById('buildingSwitchIP').value = request.ConnectivityDetails.BuildingSwitchIP || '';
+            document.getElementById('buildingSwitchPort').value = request.ConnectivityDetails.BuildingSwitchPort || '';
+            document.getElementById('accessSwitchIP').value = request.ConnectivityDetails.AccessSwitchIP || '';
+            document.getElementById('accessSwitchPort').value = request.ConnectivityDetails.AccessSwitchPort || '';
+            document.getElementById('ioPortNo').value = request.ConnectivityDetails.IOPortNo || '';
+        }
+
+        // Populate Configuration Parameters if available
+        if (request.ConfigChecks) {
+            document.getElementById('legalOS').checked = request.ConfigChecks.LegalOS || false;
+            document.getElementById('antivirus').checked = request.ConfigChecks.Antivirus || false;
+            toggleAntivirusDetails(); // Ensure antivirus details panel is shown/hidden correctly
+            if (request.ConfigChecks.Antivirus && request.AntivirusDetails) {
+                document.getElementById('antivirusBrand').value = request.AntivirusDetails.Brand || '';
+                document.getElementById('antivirusVersion').value = request.AntivirusDetails.Version || '';
+            }
+            document.getElementById('usbControl').checked = request.ConfigChecks.UsbControl || false;
+            document.getElementById('strongPassword').checked = request.ConfigChecks.StrongPassword || false;
+            document.getElementById('separateAccounts').checked = request.ConfigChecks.SeparateAccounts || false;
+            document.getElementById('disableRDP').checked = request.ConfigChecks.DisableRDP || false;
+            document.getElementById('disableAutorun').checked = request.ConfigChecks.DisableAutorun || false;
+            document.getElementById('windowsFirewall').checked = request.ConfigChecks.WindowsFirewall || false;
+            document.getElementById('fileSharing').checked = request.ConfigChecks.FileSharing || false;
+        }
+
+        // Populate Operational Practices if available
+        if (request.OperationalPractices) {
+            document.getElementById('securityUpdates').checked = request.OperationalPractices.SecurityUpdates || false;
+            document.getElementById('nonAdminUsage').checked = request.OperationalPractices.NonAdminUsage || false;
+            document.getElementById('emailBackup').checked = request.OperationalPractices.EmailBackup || false;
+        }
+
+        // Populate IT Champion Review Comments if available
+        document.getElementById('itChampionComments').value = request.ITChampionComments || '';
     }
 
     function loadChampionDetails() {
@@ -713,6 +861,7 @@
             }
         }
 
+        // Collect all checklist data
         const formData = {
             requestId: selectedRequest.RequestID || selectedRequest.Id,
             action: 'forward_to_hod',
@@ -733,6 +882,8 @@
                 disableAutorun: document.getElementById('disableAutorun').checked,
                 windowsFirewall: document.getElementById('windowsFirewall').checked,
                 fileSharing: document.getElementById('fileSharing').checked,
+            },
+            operationalPractices: { // Added this new section for operational practices
                 securityUpdates: document.getElementById('securityUpdates').checked,
                 nonAdminUsage: document.getElementById('nonAdminUsage').checked,
                 emailBackup: document.getElementById('emailBackup').checked
@@ -769,75 +920,90 @@
             console.log('Response result:', result);
 
             if (result.success) {
-                showMessage('Request successfully processed by IT Champion', 'success');
+                showMessage('Request successfully forwarded to HOD for approval!', 'success');
                 resetChecklistForm();
+                document.getElementById('checklistPanel').style.display = 'none'; // Hide checklist after submission
+                selectedRequest = null; // Clear selected request
+                // Remove the selected class from the table row
+                const previouslySelected = document.querySelector('tr.selected');
+                if (previouslySelected) {
+                    previouslySelected.classList.remove('selected');
+                }
                 setTimeout(() => {
-                    loadRequests();
-                }, 2000);
+                    loadRequests(); // Reload requests to update the table and statistics
+                }, 1000); // Give a small delay for the message to be seen
             } else {
-                showMessage(result.Message || result.message || 'Failed to process request', 'error');
+                showMessage(result.message || 'Failed to forward request to HOD.', 'error');
             }
         } catch (error) {
-            console.error('Error in forwardToHOD:', error);
-            showMessage('Error processing request: ' + error.message, 'error');
+            console.error('Error forwarding request:', error);
+            showMessage('Error forwarding request: ' + error.message, 'error');
         }
-    }
-
-    function cancelReview() {
-        resetChecklistForm();
-        document.getElementById('checklistPanel').style.display = 'none';
-
-        const selected = document.querySelector('tr.selected');
-        if (selected) {
-            selected.classList.remove('selected');
-        }
-        selectedRequest = null;
     }
 
     function resetChecklistForm() {
+        // Clear ECNET connectivity details
         document.getElementById('buildingSwitchIP').value = '';
         document.getElementById('buildingSwitchPort').value = '';
         document.getElementById('accessSwitchIP').value = '';
         document.getElementById('accessSwitchPort').value = '';
         document.getElementById('ioPortNo').value = '';
 
-        const checkboxes = document.querySelectorAll('#checklistPanel input[type="checkbox"]');
-        checkboxes.forEach(cb => cb.checked = false);
+        // Uncheck all configuration and operational practice checkboxes
+        document.getElementById('legalOS').checked = false;
+        document.getElementById('antivirus').checked = false;
+        toggleAntivirusDetails(); // Hide antivirus details and clear inputs
+        document.getElementById('usbControl').checked = false;
+        document.getElementById('strongPassword').checked = false;
+        document.getElementById('separateAccounts').checked = false;
+        document.getElementById('disableRDP').checked = false;
+        document.getElementById('disableAutorun').checked = false;
+        document.getElementById('windowsFirewall').checked = false;
+        document.getElementById('fileSharing').checked = false;
+        document.getElementById('securityUpdates').checked = false;
+        document.getElementById('nonAdminUsage').checked = false;
+        document.getElementById('emailBackup').checked = false;
 
-        document.getElementById('antivirusBrand').value = '';
-        document.getElementById('antivirusVersion').value = '';
-        document.getElementById('antivirusDetails').classList.remove('show');
-
+        // Clear IT Champion comments
         document.getElementById('itChampionComments').value = '';
+
+        // Reset verification date
         document.getElementById('verificationDate').value = new Date().toISOString().split('T')[0];
+    }
+
+    function cancelReview() {
+        resetChecklistForm();
+        document.getElementById('checklistPanel').style.display = 'none';
+        selectedRequest = null; // Clear selected request
+        const previouslySelected = document.querySelector('tr.selected');
+        if (previouslySelected) {
+            previouslySelected.classList.remove('selected');
+        }
+        showMessage('Review cancelled.', 'info'); // Added an info message for cancel
+    }
+
+    function showMessage(msg, type) {
+        const messageDiv = document.getElementById('message');
+        messageDiv.textContent = msg;
+        messageDiv.className = `message ${type}`; // Apply 'message' class and specific type (success/error)
+        messageDiv.style.display = 'block';
+        setTimeout(() => {
+            messageDiv.style.display = 'none';
+            messageDiv.textContent = '';
+        }, 5000); // Hide message after 5 seconds
     }
 
     function formatDate(dateString) {
         if (!dateString) return 'N/A';
-        try {
-            const date = new Date(dateString);
-            return date.toLocaleDateString('en-GB');
-        } catch (e) {
-            return dateString;
-        }
-    }
-
-    function showMessage(message, type) {
-        console.log(`[${type.toUpperCase()}] ${message}`);
-        const messageDiv = document.getElementById('message');
-        messageDiv.textContent = message;
-        messageDiv.className = `message ${type}`;
-        messageDiv.style.display = 'block';
-
-        setTimeout(() => {
-            messageDiv.style.display = 'none';
-        }, 5000);
+        const date = new Date(dateString);
+        if (isNaN(date)) return 'Invalid Date';
+        return date.toLocaleDateString('en-CA'); // YYYY-MM-DD format
     }
 
     function logout() {
-        if (confirm('Are you sure you want to logout?')) {
-            window.location.href = 'index.html';
-        }
+        // In a real application, this would redirect to a login page or clear session.
+        alert('Logging out...');
+        window.location.href = '/logout'; // Example redirect
     }
 </script>
 </body>
